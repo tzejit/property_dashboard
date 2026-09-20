@@ -1,0 +1,372 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Singapore Condo Analytics</title>
+  <link rel="stylesheet" href="styles.css?v=15">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div>
+    <div class="eyebrow">Singapore residential property research</div>
+    <h1>Condo Analytics</h1>
+    <p class="sub">Repeat-sale CAGR, project screening, and spatial comparison.</p>
+  </div>
+  <div class="badge">PLACEHOLDER DATA</div>
+</header>
+
+<main>
+  <section class="hero">
+    <div>
+      <span class="eyebrow">Research dashboard</span>
+      <h2>What drives condo appreciation?</h2>
+      <p>
+        Unit-level repeat-sale data. Historical patterns only.
+        This tool does not predict future prices.
+      </p>
+    </div>
+  </section>
+
+  <section class="metrics" id="metrics"></section>
+
+  <section class="grid two">
+    <article class="card chart-card">
+      <div class="card-head">
+        <div><h3>CAGR distribution</h3><p>Annualised repeat-sale appreciation</p></div>
+      </div>
+      <canvas id="distributionChart"></canvas>
+    </article>
+    <article class="card chart-card">
+      <div class="card-head">
+        <div><h3>Purchase cohort CAGR</h3><p>Median CAGR by purchase year</p></div>
+      </div>
+      <canvas id="cohortChart"></canvas>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card chart-card">
+      <div class="card-head"><div><h3>Unit size</h3><p>Descriptive only. Not a causal relationship.</p></div></div>
+      <canvas id="sizeChart"></canvas>
+    </article>
+    <article class="card chart-card">
+      <div class="card-head"><div><h3>Location</h3><p>Median CAGR by planning area</p></div></div>
+      <canvas id="locationChart"></canvas>
+    </article>
+  </section>
+
+  <!-- ========================================================
+       Project explorer
+  ========================================================= -->
+  <section class="card" id="projectExplorer">
+    <div class="card-head explorer-head">
+      <div><h3>Project explorer</h3></div>
+    </div>
+
+    <!-- PSF adjustment bar -->
+    <div class="adj-bar">
+      <label class="adj-label">
+        <input type="checkbox" id="adj-gfa">
+        GFA &minus;<input type="number" id="adj-gfa-pct" value="5" min="0" max="20" step="0.5" class="adj-num">%
+        <span class="adj-hint">post Jun 2023</span>
+      </label>
+      <label class="adj-label">
+        Lease:
+        <select id="adj-lease">
+          <option value="none">No adjustment</option>
+          <option value="proportionate">Proportionate (&times;&thinsp;99/rem)</option>
+          <option value="bala">Bala's curve</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- Filters -->
+    <div class="explorer-filters">
+
+      <!-- Row 1: Project + region + pairs -->
+      <div class="filter-row">
+        <select id="search" class="filter-select-wide"><option value="">All projects</option></select>
+        <select id="regionFilter" class="filter-select"><option value="">All regions</option></select>
+        <select id="minN" class="filter-select">
+          <option value="0">Any pairs</option>
+          <option value="20">20+ pairs</option>
+          <option value="50">50+ pairs</option>
+          <option value="100">100+ pairs</option>
+          <option value="200">200+ pairs</option>
+        </select>
+      </div>
+
+      <!-- Row 1b: Property type -->
+      <div class="filter-row">
+        <div class="filter-group">
+          <span class="filter-label">Type</span>
+          <label class="radio-pill"><input type="radio" name="assetClass" value="all" checked> All</label>
+          <label class="radio-pill"><input type="radio" name="assetClass" value="Private"> Private Condo</label>
+          <label class="radio-pill"><input type="radio" name="assetClass" value="HDB"> HDB Resale</label>
+        </div>
+      </div>
+
+      <!-- Row 2: Size + bucket merge -->
+      <div class="filter-row">
+        <div class="filter-group">
+          <span class="filter-label">Size (sqft)</span>
+          <input id="minSize" placeholder="Min" type="number" class="filter-short">
+          <span class="filter-sep">–</span>
+          <input id="maxSize" placeholder="Max" type="number" class="filter-short">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Merge ±</span>
+          <input type="number" id="bucketTol" value="0" min="0" max="500" step="10" class="filter-short">
+          <span class="filter-label">sqft</span>
+        </div>
+        <label class="filter-check">
+          <input type="checkbox" id="bestSizeOnly"> Best size only
+        </label>
+      </div>
+
+      <!-- Row 3: Property attributes -->
+      <div class="filter-row">
+        <div class="filter-group">
+          <span class="filter-label">Build yr</span>
+          <input id="buildYearMin" placeholder="From" type="number" class="filter-short">
+          <span class="filter-sep">–</span>
+          <input id="buildYearMax" placeholder="To"   type="number" class="filter-short">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">MRT ≤</span>
+          <input id="mrtDistMax" placeholder="m" type="number" class="filter-short">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Lease left ≥</span>
+          <input id="leaseLeftMin" placeholder="yr" type="number" class="filter-short">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Age ≤</span>
+          <input id="houseAgeMax" placeholder="yr" type="number" class="filter-short">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Units ≥</span>
+          <input id="unitCountMin" placeholder="n" type="number" class="filter-short">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">PSF ≤</span>
+          <input id="maxPsf" placeholder="$psf" type="number" class="filter-short" style="width:64px">
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Last tx after</span>
+          <input id="lastTxAfter" type="month" class="filter-short" style="width:130px">
+        </div>
+      </div>
+
+      <!-- Row 4: School proximity -->
+      <div class="filter-row">
+        <div class="school-search-wrap">
+          <input type="text" id="school-search" placeholder="Near school…" class="filter-school" autocomplete="off">
+          <div id="school-autocomplete" class="school-autocomplete" hidden></div>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Distance</span>
+          <input type="number" id="school-dist-min" placeholder="Min m" class="filter-short">
+          <span class="filter-sep">–</span>
+          <input type="number" id="school-dist-max" placeholder="Max m" class="filter-short">
+        </div>
+      </div>
+
+      <!-- Selected school tags -->
+      <div id="school-tags" class="school-tags"></div>
+
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap" style="margin-top:14px">
+      <table>
+        <thead>
+          <tr>
+            <th data-col="project_name">Project</th>
+            <th data-col="asset_class">Type</th>
+            <th data-col="n">Pairs</th>
+            <th data-col="tx_per_year">Tx/yr<span class="info-tip" data-tip="Average transactions per year for this size bucket. Higher = more liquid — easier to buy and sell. Null when fewer than 6 months of transaction history.">?</span></th>
+            <th data-col="median_cagr">CAGR (All)<span class="info-tip" data-tip="All purchase types combined. CAGR = (resale price ÷ purchase price)^(1÷years held) - 1. Raw transaction prices — no lease or GFA adjustment.">?</span></th>
+            <th data-col="recent_cagr">Recent<span class="info-tip" data-tip="Median CAGR of repeat-sale pairs where the resale date is within the last 3 years. Null when fewer than 3 recent pairs. Compare with CAGR (All) to see if performance is improving or declining.">?</span></th>
+            <th data-col="cagr_spread">Spread<span class="info-tip" data-tip="CAGR p75 minus p25. Narrower spread means more consistent returns across all pairs. Wide spread means high variance — some pairs did very well, others poorly.">?</span></th>
+            <th data-col="cagr_new">New Sale<span class="info-tip tip-left" data-tip="Bought direct from developer at launch (New Sale). Purchase price = developer launch price. Measures the annualised gain from launch entry to later resale. Null when fewer than 3 pairs.">?</span></th>
+            <th data-col="cagr_sub">Sub Sale<span class="info-tip tip-left" data-tip="Bought as a sub-sale before TOP (unit on-sold during construction). Purchase price = sub-sale transaction price. Measures the gain from that pre-TOP price to later resale. Null when fewer than 3 pairs.">?</span></th>
+            <th data-col="cagr_res">Resale<span class="info-tip tip-left" data-tip="Bought in the secondary market after TOP (resale-to-resale round trip). Purchase price = open-market resale price. Measures the gain from that entry price to a later resale. Null when fewer than 3 pairs.">?</span></th>
+            <th data-col="profit_rate">Profitable</th>
+            <th data-col="median_holding_years">Holding</th>
+            <th data-col="purchase_area_sqft">Size</th>
+            <th data-col="median_psf">PSF<span class="info-tip" data-tip="Median resale price per square foot for units of this size in this project, based on transactions in the latest calendar quarter with data. Falls back to the single most recent transaction when the latest quarter has no data.">?</span></th>
+            <th data-col="psf_cagr">PSF Growth<span class="info-tip tip-left" data-tip="Annualised PSF price growth from the first to the last calendar quarter that has transaction data for this size bucket. Uses all transactions of similar area — not just same-unit repeat sales. Null when fewer than 4 quarters of data exist.">?</span></th>
+            <th data-col="psf_momentum">1Y PSF<span class="info-tip tip-left" data-tip="PSF change over the last year: last 4 quarters median PSF vs the 4 quarters before that. Shows short-term price momentum. Null when fewer than 8 quarters of data.">?</span></th>
+            <th data-col="build_year">Build Yr</th>
+            <th data-col="lease_remaining">Lease Left</th>
+            <th data-col="nearest_mrt_distance_m">MRT</th>
+            <th data-col="total_units">Units</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="projectTable"></tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div id="pagination" class="pagination"></div>
+  </section>
+</main>
+
+<!-- ============================================================
+     Detail modal
+============================================================ -->
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div class="modal-box">
+
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow" id="modal-subtitle"></div>
+        <h3 id="modal-title" style="margin:4px 0 0"></h3>
+        <div id="modal-address" class="modal-address"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+    </div>
+
+    <!-- Read-only adjustment status -->
+    <div class="adj-bar adj-bar-modal">
+      <span class="adj-hint">PSF adjustments (set in explorer above):</span>
+      <span class="adj-active" id="adj-active-note">No PSF adjustments active</span>
+    </div>
+
+    <!-- Size bucket breakdown for this project -->
+    <div class="modal-section">
+      <div class="modal-section-head">
+        <h4>Available size buckets</h4>
+        <div class="size-bucket-controls">
+          <label class="filter-label">Merge ±
+            <input type="number" id="modal-bucket-tol" value="0" min="0" max="300" step="10" class="adj-num" style="width:48px"> sqft
+          </label>
+        </div>
+      </div>
+      <div class="table-wrap nb-table-wrap" style="max-height:180px">
+        <table id="size-bucket-table">
+          <thead>
+            <tr>
+              <th>Size (sqft)</th><th>Pairs</th>
+              <th>CAGR (All)</th><th>New Sale</th><th>Sub Sale</th><th>Resale</th>
+              <th>Profitable</th><th>Holding</th>
+            </tr>
+          </thead>
+          <tbody id="size-bucket-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PSF + CAGR chart -->
+    <div class="modal-section">
+      <div class="modal-section-head">
+        <h4>PSF and CAGR over time</h4>
+        <span class="chart-size-note" id="chart-size-note"></span>
+      </div>
+
+      <!-- Row 1: date axis toggle + purchase type -->
+      <div class="chart-filter-row" style="flex-wrap:wrap; gap:10px; margin-bottom:6px">
+        <span class="filter-label">X-axis:</span>
+        <label class="radio-label"><input type="radio" name="chartAxis" value="sale" checked> Resale date</label>
+        <label class="radio-label"><input type="radio" name="chartAxis" value="purchase"> Purchase date</label>
+        <span class="chart-divider"></span>
+        <span class="filter-label">Purchase type:</span>
+        <label class="radio-label"><input type="radio" name="modalPurchaseType" value="all" checked> All</label>
+        <label class="radio-label"><input type="radio" name="modalPurchaseType" value="new"> New Sale</label>
+        <label class="radio-label"><input type="radio" name="modalPurchaseType" value="sub"> Sub Sale</label>
+        <label class="radio-label"><input type="radio" name="modalPurchaseType" value="res"> Resale</label>
+      </div>
+
+      <!-- Row 2: date range filter + volume summary -->
+      <div class="chart-filter-row" style="margin-bottom:8px">
+        <span class="filter-label">From:</span>
+        <input type="month" id="chart-date-min" title="Earliest month to show">
+        <span class="filter-label">to:</span>
+        <input type="month" id="chart-date-max" title="Latest month to show">
+        <span id="chart-vol-summary" class="chart-vol-summary"></span>
+      </div>
+
+      <div class="chart-wrap-modal">
+        <canvas id="modal-psf-chart"></canvas>
+      </div>
+      <div class="cagr-method" id="chart-method-note">
+        <!-- filled by JS based on axis mode -->
+      </div>
+    </div>
+
+    <!-- Spatial neighbours -->
+    <div class="modal-section">
+      <div class="modal-section-head">
+        <h4>Spatial neighbours &mdash; within <span id="nb-radius-label">500</span>&thinsp;m</h4>
+        <label class="adj-label">
+          Radius:&nbsp;<input type="number" id="nb-radius" value="500" min="0" max="10000" step="50" class="adj-num">&thinsp;m
+        </label>
+      </div>
+      <div class="table-wrap nb-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Project</th><th>Distance</th><th>Pairs</th>
+              <th>CAGR (All)</th><th>New Sale</th><th>Sub Sale</th><th>Resale</th>
+              <th>Profitable</th><th>Holding</th><th>Size</th><th>PSF Δ</th>
+              <th>Build Yr</th><th>Lease Left</th><th>MRT</th><th>Units</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="neighbours-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- MRT neighbours -->
+    <div class="modal-section">
+      <div class="modal-section-head">
+        <h4>MRT neighbours &mdash; <span id="mrt-nb-name">—</span></h4>
+        <label class="adj-label">
+          Within&nbsp;<input type="number" id="mrt-nb-radius" value="300" min="0" max="5000" step="50" class="adj-num">&thinsp;m of MRT
+          &nbsp;<span id="mrt-nb-radius-val" style="display:none"></span>
+          <span class="adj-hint">Default is this project's MRT distance.</span>
+        </label>
+      </div>
+      <div class="table-wrap nb-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Project</th><th>MRT dist</th><th>Pairs</th>
+              <th>CAGR (All)</th><th>New Sale</th><th>Sub Sale</th><th>Resale</th>
+              <th>Profitable</th><th>Holding</th><th>Size</th><th>PSF Δ</th>
+              <th>Build Yr</th><th>Lease Left</th><th>Units</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="mrt-neighbours-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Nearby primary schools -->
+    <div class="modal-section">
+      <div class="modal-section-head">
+        <h4>Nearby primary schools</h4>
+        <span class="muted-sm">Within 2&thinsp;km</span>
+      </div>
+      <div class="table-wrap nb-table-wrap">
+        <table>
+          <thead>
+            <tr><th>School</th><th>Distance</th></tr>
+          </thead>
+          <tbody id="schools-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /.modal-box -->
+</div><!-- /#modal-overlay -->
+
+<script src="app.js?v=19"></script>
+</body>
+</html>
+

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.claude/
+
+# Raw source data — too large for git / re-downloadable, see README
+data/all_transactions.csv
+data/hdb_resale.csv
+data/geocode_hdb.log
