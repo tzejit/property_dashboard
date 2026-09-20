@@ -131,6 +131,37 @@ input:focus, select:focus { border-color: #9ca3af; }
 }
 .school-tag-remove:hover { opacity: 1; }
 
+/* ── Project search + autocomplete (multi-select) ── */
+.project-search-wrap { position: relative; }
+.project-autocomplete {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 300;
+  min-width: 240px; max-height: 240px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.13);
+  padding: 4px 0;
+}
+.project-option {
+  padding: 7px 14px; font-size: 12px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text);
+}
+.project-option:hover { background: var(--soft); }
+.project-option.selected { color: var(--green); font-weight: 600; }
+.project-option.selected::after { content: " ✓"; }
+
+.project-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.project-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #e6f4ed; border: 1px solid #b6dfc8; color: var(--green);
+  border-radius: 20px; padding: 3px 10px;
+  font-size: 11px; font-weight: 600;
+}
+.project-tag-remove {
+  cursor: pointer; font-size: 14px; line-height: 1;
+  opacity: .6; margin-left: 1px;
+}
+.project-tag-remove:hover { opacity: 1; }
+
 /* ── Adjustment bar ── */
 .adj-bar {
   display: flex; align-items: center; gap: 18px; flex-wrap: wrap;

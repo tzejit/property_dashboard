@@ -11,6 +11,8 @@ const state = {
   schools: null,     // lazy-loaded from schools.json
   schoolsLoading: null,
   selectedSchools: new Set(),  // currently selected school names for filtering
+  selectedProjects: new Set(), // currently selected project names for filtering (multi-select)
+  projectNameList: [],         // sorted project names for the search autocomplete
   charts: {},
   sort: { col: "n", dir: "desc" },
   page: 1,
@@ -308,21 +310,16 @@ function renderCharts(d) {
 // ============================================================
 
 /**
- * Repopulate the project-name (#search) and region (#regionFilter) dropdowns
- * from the given project subset. Preserves the current selection when possible.
+ * Repopulate the project-name autocomplete list and region (#regionFilter)
+ * dropdown from the given project subset. Preserves the region selection when possible.
  */
 function repopulateDropdowns(projects) {
-  const searchEl  = document.getElementById("search");
   const regionEl  = document.getElementById("regionFilter");
 
-  const prevName   = searchEl?.value   ?? "";
   const prevRegion = regionEl?.value   ?? "";
 
   // Project names — show HDB blocks by "address" (= project_name) or condo names.
-  const names = [...new Set(projects.map(x => x.project_name).filter(Boolean))].sort();
-  searchEl.innerHTML =
-    `<option value="">All projects</option>` +
-    names.map(n => `<option value="${escapeHtml(n)}"${n === prevName ? " selected" : ""}>${escapeHtml(n)}</option>`).join("");
+  state.projectNameList = [...new Set(projects.map(x => x.project_name).filter(Boolean))].sort();
 
   // Regions — HDB rows have no region so the list may be empty.
   const regions = [...new Set(projects.map(x => x.region).filter(Boolean))].sort();
@@ -337,7 +334,7 @@ function populateFilters(projects) {
   repopulateDropdowns(projects);
 
   [
-    "search", "regionFilter", "minN",
+    "regionFilter", "minN",
     "minSize", "maxSize",
     "buildYearMin", "buildYearMax",
     "mrtDistMax", "leaseLeftMin",
@@ -377,6 +374,50 @@ function populateFilters(projects) {
     radio.addEventListener("change", () => {
       if (state.modalProject) renderPsfCagrChart(state.modalProject);
     });
+  });
+
+  // Project autocomplete search (multi-select)
+  const projectInput = document.getElementById("project-search");
+  const projectDrop  = document.getElementById("project-autocomplete");
+
+  function showProjectDropdown() {
+    if (!projectDrop) return;
+    const q = (projectInput?.value ?? "").trim().toLowerCase();
+    if (!q) { projectDrop.hidden = true; return; }
+
+    const matches = state.projectNameList.filter(n => n.toLowerCase().includes(q)).slice(0, 30);
+    if (!matches.length) { projectDrop.hidden = true; return; }
+    projectDrop.innerHTML = matches.map(n => {
+      const sel = state.selectedProjects.has(n);
+      return `<div class="project-option${sel ? " selected" : ""}" data-name="${escapeHtml(n)}">${escapeHtml(n)}</div>`;
+    }).join("");
+    projectDrop.hidden = false;
+  }
+
+  projectDrop?.addEventListener("mousedown", e => {
+    const opt = e.target.closest(".project-option");
+    if (!opt) return;
+    e.preventDefault();  // keep focus on input
+    const name = opt.dataset.name;
+    if (state.selectedProjects.has(name)) {
+      state.selectedProjects.delete(name);
+    } else {
+      state.selectedProjects.add(name);
+    }
+    renderProjectTags();
+    showProjectDropdown();
+    state.page = 1;
+    renderProjects();
+  });
+
+  projectInput?.addEventListener("input", () => showProjectDropdown());
+  projectInput?.addEventListener("focus", () => showProjectDropdown());
+  projectInput?.addEventListener("blur", () => {
+    // Small delay so mousedown on an option fires first
+    setTimeout(() => { if (projectDrop) projectDrop.hidden = true; }, 150);
+  });
+  projectInput?.addEventListener("keydown", e => {
+    if (e.key === "Escape") { projectDrop.hidden = true; projectInput.blur(); }
   });
 
   // School autocomplete search
@@ -502,7 +543,7 @@ function readFilters() {
   const v  = id => (document.getElementById(id)?.value ?? "").trim();
   const nb = id => { const s = v(id); return s === "" ? null : Number(s); };
   return {
-    name:           v("search"),
+    selectedProjects: state.selectedProjects,
     region:         v("regionFilter"),
     assetClass:     document.querySelector('input[name="assetClass"]:checked')?.value ?? "all",
     minN:           nb("minN") ?? 0,
@@ -581,7 +622,7 @@ function applyBucketMerge(rows, bucketTol, bestSizeOnly) {
 
 function applyFilters(projects, f) {
   return projects.filter(p => {
-    if (f.name    && f.name !== "All projects"  && p.project_name !== f.name)     return false;
+    if (f.selectedProjects.size > 0 && !f.selectedProjects.has(p.project_name)) return false;
     if (f.region  && f.region !== "All regions" && p.region !== f.region)         return false;
     if (f.assetClass && f.assetClass !== "all" && (p.asset_class ?? "Private") !== f.assetClass) return false;
     if (p.n < f.minN)                                                              return false;
@@ -1543,6 +1584,26 @@ function renderSchoolProximity(p) {
       <td>${fmtDist(s.d)}</td>
     </tr>
   `).join("");
+}
+
+function renderProjectTags() {
+  const el = document.getElementById("project-tags");
+  if (!el) return;
+  if (!state.selectedProjects.size) { el.innerHTML = ""; return; }
+  el.innerHTML = [...state.selectedProjects].sort().map(name => `
+    <span class="project-tag">
+      ${escapeHtml(name)}
+      <span class="project-tag-remove" data-name="${escapeHtml(name)}" title="Remove">×</span>
+    </span>
+  `).join("");
+  el.querySelectorAll(".project-tag-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.selectedProjects.delete(btn.dataset.name);
+      renderProjectTags();
+      state.page = 1;
+      renderProjects();
+    });
+  });
 }
 
 function renderSchoolTags() {

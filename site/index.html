@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Singapore Condo Analytics</title>
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=16">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -88,7 +88,10 @@
 
       <!-- Row 1: Project + region + pairs -->
       <div class="filter-row">
-        <select id="search" class="filter-select-wide"><option value="">All projects</option></select>
+        <div class="project-search-wrap">
+          <input type="text" id="project-search" placeholder="Search projects…" class="filter-select-wide" autocomplete="off">
+          <div id="project-autocomplete" class="project-autocomplete" hidden></div>
+        </div>
         <select id="regionFilter" class="filter-select"><option value="">All regions</option></select>
         <select id="minN" class="filter-select">
           <option value="0">Any pairs</option>
@@ -98,6 +101,9 @@
           <option value="200">200+ pairs</option>
         </select>
       </div>
+
+      <!-- Selected project tags -->
+      <div id="project-tags" class="project-tags"></div>
 
       <!-- Row 1b: Property type -->
       <div class="filter-row">
@@ -366,7 +372,7 @@
   </div><!-- /.modal-box -->
 </div><!-- /#modal-overlay -->
 
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
 
