@@ -353,8 +353,14 @@ function populateFilters(projects) {
     });
   });
 
-  // MRT trend lease mode — re-render the trend chart only
-  document.getElementById("mrt-trend-lease")?.addEventListener("change", () => renderMrtTrend());
+  // MRT trend card — station list uses all rows (independent of the Type filter).
+  const trendStations = [...new Set(projects.map(x => x.nearest_mrt).filter(Boolean))].sort();
+  document.getElementById("mrt-trend-stations").innerHTML =
+    trendStations.map(n => `<option value="${escapeHtml(n)}">`).join("");
+  ["mrt-trend-a", "mrt-trend-b", "mrt-trend-radius", "mrt-trend-lease"].forEach(id => {
+    document.getElementById(id)?.addEventListener("input", () => renderMrtTrend());
+  });
+  renderMrtTrend();
 
   // Global purchase type radios (explorer) — re-render table only
   document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
@@ -738,9 +744,6 @@ function renderProjects() {
 
   updateSortIndicators();
   renderPagination(total);
-
-  state.mrtTrendRows = f.mrtStation ? filtered : null;
-  renderMrtTrend();
 }
 
 // ============================================================
@@ -759,90 +762,117 @@ function weightedMedian(points) {
   return null;
 }
 
+// Fixed colour per station slot (A = blue, B = orange). Type is shown by dash style.
+const MRT_TREND_SLOTS = [
+  { id: "mrt-trend-a", label: "A", color: "#2a78d6" },
+  { id: "mrt-trend-b", label: "B", color: "#eb6834" },
+];
+const MRT_TREND_TYPES = [
+  { cls: "Private", label: "Condo", dash: [] },
+  { cls: "HDB",     label: "HDB",   dash: [6, 4] },
+];
+
+// Resolve typed text to one station name: exact match first, then a unique substring match.
+function resolveStation(text) {
+  const q = text.trim().toUpperCase();
+  if (!q) return null;
+  const all = [...new Set(state.data.projects.map(r => r.nearest_mrt).filter(Boolean))];
+  if (all.includes(q)) return q;
+  const hits = all.filter(n => n.includes(q));
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /**
- * Plot the quarterly median PSF across all filtered rows near the selected MRT station.
- * Rows come from the explorer filters (type, MRT radius, size, and so on).
+ * Quarterly lease-adjusted median PSF for one set of rows.
  * Each row's monthly PSF (ts_size.json) is lease-adjusted for the month's year,
  * then pooled per quarter as a transaction-weighted median.
+ * Returns Map qKey -> { psf, n, blocks }.
  */
-function renderMrtTrend() {
-  const panel = document.getElementById("mrt-trend");
-  if (!panel) return;
-  const rows = state.mrtTrendRows;
-  if (!rows) {
-    panel.hidden = true;
-    if (state.charts["mrt-trend-chart"]) { state.charts["mrt-trend-chart"].destroy(); delete state.charts["mrt-trend-chart"]; }
-    return;
-  }
-  panel.hidden = false;
-
-  const stations = [...new Set(rows.map(r => r.nearest_mrt).filter(Boolean))];
-  document.getElementById("mrt-trend-name").textContent =
-    stations.length === 1 ? stations[0] : `"${document.getElementById("mrtStation").value.trim()}" (${stations.length} stations)`;
-  const note = document.getElementById("mrt-trend-note");
-
-  if (!state.tsSize) {
-    note.textContent = "Loading time series.";
-    ensureTsSize().then(() => renderMrtTrend());
-    return;
-  }
-
-  const mode = document.getElementById("mrt-trend-lease")?.value || "bala";
-  const byQ = new Map();  // qKey -> { adj: [[psf, n]], raw: [[psf, n]], n, blocks:Set }
+function trendSeries(rows, mode) {
+  const byQ = new Map();
   for (const r of rows) {
     const series = state.tsSize[`${r.project_name}|${Math.round(r.purchase_area_sqft)}`]?.p;
     if (!series) continue;
     for (const [month, psf, n] of series) {
       const qk = monthToQKey(month);
       let q = byQ.get(qk);
-      if (!q) byQ.set(qk, q = { adj: [], raw: [], n: 0, blocks: new Set() });
-      q.raw.push([psf, n]);
-      q.adj.push([psf * leaseFactor(r, parseInt(month.slice(0, 4)), mode), n]);
+      if (!q) byQ.set(qk, q = { pts: [], n: 0, blocks: new Set() });
+      q.pts.push([psf * leaseFactor(r, parseInt(month.slice(0, 4)), mode), n]);
       q.n += n;
       q.blocks.add(r.project_name);
     }
   }
+  const out = new Map();
+  for (const [qk, q] of byQ) out.set(qk, { psf: Math.round(weightedMedian(q.pts)), n: q.n, blocks: q.blocks.size });
+  return out;
+}
 
-  const qks = [...byQ.keys()].sort();
-  const blocks = new Set(rows.map(r => r.project_name));
-  const tx = qks.reduce((s, k) => s + byQ.get(k).n, 0);
-  note.textContent = qks.length
-    ? `${fmtNum(blocks.size)} projects/blocks, ${fmtNum(tx)} transactions. Uses the explorer filters (Type, MRT ≤, size, and so on). ` +
-      `Quarterly median PSF, weighted by transaction count.` +
-      (mode === "none" ? "" : ` Lease adjustment uses the remaining lease in each transaction year.`)
-    : "No transactions match these filters.";
+/**
+ * Plot up to 4 curves: Station A and Station B, each split into Condo and HDB.
+ * Rows: all projects whose nearest MRT is the station, within the radius.
+ */
+function renderMrtTrend() {
+  const note = document.getElementById("mrt-trend-note");
+  if (!note || !state.data) return;
 
-  const q = qks.map(k => byQ.get(k));
+  const stations = MRT_TREND_SLOTS.map(sl => ({ ...sl, name: resolveStation(document.getElementById(sl.id).value) }));
+  const picked = stations.filter(st => st.name);
+  if (!picked.length) {
+    note.textContent = "Pick a station to show its price trend.";
+    if (state.charts["mrt-trend-chart"]) { state.charts["mrt-trend-chart"].destroy(); delete state.charts["mrt-trend-chart"]; }
+    return;
+  }
+  if (!state.tsSize) {
+    note.textContent = "Loading time series.";
+    ensureTsSize().then(() => renderMrtTrend());
+    return;
+  }
+
+  const radius = parseFloat(document.getElementById("mrt-trend-radius").value) || 500;
+  const mode   = document.getElementById("mrt-trend-lease").value || "bala";
+
+  const curves = [];
+  for (const st of picked) {
+    for (const t of MRT_TREND_TYPES) {
+      const rows = state.data.projects.filter(r =>
+        r.nearest_mrt === st.name &&
+        (r.asset_class ?? "Private") === t.cls &&
+        r.nearest_mrt_distance_m != null && r.nearest_mrt_distance_m <= radius);
+      curves.push({ st, t, rows, series: trendSeries(rows, mode) });
+    }
+  }
+
+  const qks = [...new Set(curves.flatMap(c => [...c.series.keys()]))].sort();
+  const short = n => n.replace(/ MRT STATION$/, "");
+  note.textContent = curves.map(c =>
+    `${c.st.label} ${c.t.label}: ${fmtNum(new Set(c.rows.map(r => r.project_name)).size)} projects/blocks`
+  ).join(" · ") +
+    `. Quarterly median PSF, weighted by transaction count.` +
+    (mode === "none" ? "" : " Lease adjustment uses the remaining lease in each transaction year.");
+
   makeChart("mrt-trend-chart", {
     type: "line",
     data: {
       labels: qks.map(qKeyToLabel),
-      datasets: [
-        {
-          label: mode === "none" ? "Median PSF" : "Lease-adjusted PSF",
-          data: q.map(x => Math.round(weightedMedian(x.adj))),
-          borderColor: "#2563eb", backgroundColor: "#2563eb",
-          borderWidth: 2, pointRadius: 0, tension: .25,
-        },
-        ...(mode === "none" ? [] : [{
-          label: "Raw PSF",
-          data: q.map(x => Math.round(weightedMedian(x.raw))),
-          borderColor: "#9ca3af", backgroundColor: "#9ca3af",
-          borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, tension: .25,
-        }]),
-      ],
+      datasets: curves.map(c => ({
+        label: `${c.st.label}: ${short(c.st.name)} · ${c.t.label}`,
+        data: qks.map(k => c.series.get(k)?.psf ?? null),
+        borderColor: c.st.color, backgroundColor: c.st.color,
+        borderDash: c.t.dash, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+        tension: .25, spanGaps: true,
+      })),
     },
     options: {
       ...baseOptions(),
       interaction: { mode: "index", intersect: false },
       plugins: {
-        legend: { display: true, labels: { boxWidth: 12 } },
+        legend: { display: true, labels: { boxWidth: 24, boxHeight: 0, color: "#111827" } },
         tooltip: {
           callbacks: {
-            label: c => `${c.dataset.label}: $${fmtNum(c.parsed.y)}`,
-            afterBody: items => {
-              const x = q[items[0].dataIndex];
-              return `${fmtNum(x.n)} tx · ${fmtNum(x.blocks.size)} projects/blocks`;
+            label: item => {
+              const c = curves[item.datasetIndex];
+              const x = c.series.get(qks[item.dataIndex]);
+              return x ? `${item.dataset.label}: $${fmtNum(x.psf)} (${fmtNum(x.n)} tx, ${x.blocks} blocks)` : null;
             },
           },
         },
@@ -850,7 +880,7 @@ function renderMrtTrend() {
       scales: {
         x: { grid: { display: false }, ticks: { color: "#667085", maxTicksLimit: 12 } },
         y: { grid: { color: "#edf0f3" }, ticks: { color: "#667085", callback: v => `$${fmtNum(v)}` },
-             title: { display: true, text: "PSF ($)" } },
+             title: { display: true, text: mode === "none" ? "PSF ($)" : "Lease-adjusted PSF ($)" } },
       },
     },
   });

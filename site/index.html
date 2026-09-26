@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Singapore Condo Analytics</title>
-  <link rel="stylesheet" href="styles.css?v=17">
+  <link rel="stylesheet" href="styles.css?v=18">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -191,23 +191,6 @@
 
     </div>
 
-    <!-- MRT area price trend (shown when an MRT station is selected) -->
-    <div id="mrt-trend" class="mrt-trend" hidden>
-      <div class="mrt-trend-head">
-        <h4>Price trend near <span id="mrt-trend-name"></span></h4>
-        <label class="adj-label">
-          Lease:
-          <select id="mrt-trend-lease">
-            <option value="bala" selected>Bala's curve</option>
-            <option value="proportionate">Proportionate (&times;&thinsp;99/rem)</option>
-            <option value="none">No adjustment</option>
-          </select>
-        </label>
-      </div>
-      <p class="muted-sm" id="mrt-trend-note"></p>
-      <div class="mrt-trend-chart"><canvas id="mrt-trend-chart"></canvas></div>
-    </div>
-
     <!-- Table -->
     <div class="table-wrap" style="margin-top:14px">
       <table>
@@ -242,6 +225,44 @@
 
     <!-- Pagination -->
     <div id="pagination" class="pagination"></div>
+  </section>
+
+  <!-- ========================================================
+       MRT price trend comparison (2 stations x Condo/HDB = 4 curves)
+  ========================================================= -->
+  <section class="card" id="mrtTrendCard">
+    <div class="card-head">
+      <div>
+        <h3>MRT price trend</h3>
+        <p>Compare two MRT stations. Each station shows a Condo line and an HDB line.</p>
+      </div>
+    </div>
+    <div class="filter-row mrt-trend-controls">
+      <div class="filter-group">
+        <span class="filter-label"><span class="swatch" style="background:#2a78d6"></span>Station A</span>
+        <input id="mrt-trend-a" list="mrt-trend-stations" placeholder="Pick a station" class="filter-school" autocomplete="off">
+      </div>
+      <div class="filter-group">
+        <span class="filter-label"><span class="swatch" style="background:#eb6834"></span>Station B</span>
+        <input id="mrt-trend-b" list="mrt-trend-stations" placeholder="Pick a station" class="filter-school" autocomplete="off">
+      </div>
+      <datalist id="mrt-trend-stations"></datalist>
+      <div class="filter-group">
+        <span class="filter-label">Within</span>
+        <input type="number" id="mrt-trend-radius" value="500" min="0" max="5000" step="50" class="filter-short">
+        <span class="filter-label">m</span>
+      </div>
+      <label class="adj-label">
+        Lease:
+        <select id="mrt-trend-lease">
+          <option value="bala" selected>Bala's curve</option>
+          <option value="proportionate">Proportionate (&times;&thinsp;99/rem)</option>
+          <option value="none">No adjustment</option>
+        </select>
+      </label>
+    </div>
+    <p class="muted-sm" id="mrt-trend-note">Pick a station to show its price trend.</p>
+    <div class="mrt-trend-chart"><canvas id="mrt-trend-chart"></canvas></div>
   </section>
 </main>
 
@@ -394,7 +415,7 @@
   </div><!-- /.modal-box -->
 </div><!-- /#modal-overlay -->
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>
 

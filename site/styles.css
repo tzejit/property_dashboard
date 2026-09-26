@@ -361,8 +361,7 @@ input[type="month"] {
   .modal-box { padding: 18px; }
 }
 
-/* MRT area price trend */
-.mrt-trend { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line, #e5e7eb); border-radius: 10px; }
-.mrt-trend-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.mrt-trend-head h4 { margin: 0; }
-.mrt-trend-chart { position: relative; height: 280px; margin-top: 8px; }
+/* MRT price trend comparison */
+.mrt-trend-controls { margin-top: 10px; }
+.mrt-trend-controls .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.mrt-trend-chart { position: relative; height: 320px; margin-top: 8px; }
