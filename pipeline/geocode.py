@@ -129,10 +129,27 @@ class OneMapAuth:
 
 
 def onemap_get(auth: OneMapAuth, path: str, params: dict, retries: int = 3) -> dict:
-    """GET with auth-header retry-on-401 and basic backoff on other errors."""
+    """GET with auth-header retry-on-401 and basic backoff on other errors.
+
+    Also retries on network-level exceptions (timeout, connection reset,
+    etc.), not just HTTP error codes. Previously these propagated straight
+    to the caller on the first attempt; in find_nearest_mrt() that meant a
+    single transient network blip on the walking-route call for the TRUE
+    nearest station silently dropped that candidate, letting a farther
+    station "win" as the recorded nearest MRT with no trace of the failure
+    in the output data.
+    """
+    last_exc = None
     for attempt in range(1, retries + 1):
-        resp = requests.get(f"{ONEMAP_BASE_URL}{path}", params=params,
-                             headers=auth.headers(), timeout=30)
+        try:
+            resp = requests.get(f"{ONEMAP_BASE_URL}{path}", params=params,
+                                 headers=auth.headers(), timeout=30)
+        except requests.exceptions.RequestException as e:
+            last_exc = e
+            wait = 2 ** attempt
+            print(f"  Network error ({e}), retrying in {wait}s...")
+            time.sleep(wait)
+            continue
         if resp.status_code == 401:
             auth._refresh()
             continue
@@ -143,7 +160,10 @@ def onemap_get(auth: OneMapAuth, path: str, params: dict, retries: int = 3) -> d
             continue
         resp.raise_for_status()
         return resp.json()
-    sys.exit(f"OneMap request to {path} failed after {retries} retries.")
+    # Raise (rather than sys.exit) so a persistent failure on one walking-route
+    # candidate in find_nearest_mrt() is still caught by its own except-clause
+    # and just skips that candidate, instead of killing the whole batch run.
+    raise RuntimeError(f"OneMap request to {path} failed after {retries} retries: {last_exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -309,9 +329,9 @@ def main():
                          help="Path to the scraper's merged transactions CSV.")
     parser.add_argument("--locations-output", default="locations.csv",
                          help="Where to write/merge geocoded results (default: locations.csv)")
-    parser.add_argument("--onemap-email", default="tzejit@gmail.com",
+    parser.add_argument("--onemap-email", default=os.environ.get("ONEMAP_EMAIL"),
                          help="OneMap account email (or set ONEMAP_EMAIL env var).")
-    parser.add_argument("--onemap-password", default="gyhT5i9wp$tfR4x",
+    parser.add_argument("--onemap-password", default=os.environ.get("ONEMAP_PASSWORD"),
                          help="OneMap account password (or set ONEMAP_PASSWORD env var). "
                               "Never pass this on a shared/logged shell — prefer the env var.")
     parser.add_argument("--include-mrt", action="store_true",

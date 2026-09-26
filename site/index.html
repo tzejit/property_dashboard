@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Singapore Condo Analytics</title>
-  <link rel="stylesheet" href="styles.css?v=16">
+  <link rel="stylesheet" href="styles.css?v=17">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -142,6 +142,11 @@
           <input id="buildYearMax" placeholder="To"   type="number" class="filter-short">
         </div>
         <div class="filter-group">
+          <span class="filter-label">MRT</span>
+          <input id="mrtStation" list="mrt-station-list" placeholder="Any station" class="filter-school" autocomplete="off">
+          <datalist id="mrt-station-list"></datalist>
+        </div>
+        <div class="filter-group">
           <span class="filter-label">MRT ≤</span>
           <input id="mrtDistMax" placeholder="m" type="number" class="filter-short">
         </div>
@@ -184,6 +189,23 @@
       <!-- Selected school tags -->
       <div id="school-tags" class="school-tags"></div>
 
+    </div>
+
+    <!-- MRT area price trend (shown when an MRT station is selected) -->
+    <div id="mrt-trend" class="mrt-trend" hidden>
+      <div class="mrt-trend-head">
+        <h4>Price trend near <span id="mrt-trend-name"></span></h4>
+        <label class="adj-label">
+          Lease:
+          <select id="mrt-trend-lease">
+            <option value="bala" selected>Bala's curve</option>
+            <option value="proportionate">Proportionate (&times;&thinsp;99/rem)</option>
+            <option value="none">No adjustment</option>
+          </select>
+        </label>
+      </div>
+      <p class="muted-sm" id="mrt-trend-note"></p>
+      <div class="mrt-trend-chart"><canvas id="mrt-trend-chart"></canvas></div>
     </div>
 
     <!-- Table -->
@@ -372,7 +394,7 @@
   </div><!-- /.modal-box -->
 </div><!-- /#modal-overlay -->
 
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
 

@@ -1324,10 +1324,19 @@ def make_project_records(
         postal = group["postal_code"].dropna().mode()
         postal_code = str(postal.iloc[0]) if not postal.empty else ""
 
-        lat      = _first_valid(group, "latitude")
-        lon      = _first_valid(group, "longitude")
-        mrt      = _first_valid(group, "nearest_mrt")
-        mrt_dist = _first_valid(group, "nearest_mrt_distance_m")
+        # Restrict location lookups to rows matching the representative postal
+        # code. A large project can span multiple postal codes (different
+        # blocks), each with its own lat/lon/nearest MRT. Without this filter,
+        # `postal_code` (the group's modal postal code) and the location
+        # fields (previously first-valid over the WHOLE group) could come
+        # from different blocks, showing a postal code paired with another
+        # block's MRT/distance.
+        loc_group = group[group["postal_code"] == postal_code] if postal_code else group
+
+        lat      = _first_valid(loc_group, "latitude")
+        lon      = _first_valid(loc_group, "longitude")
+        mrt      = _first_valid(loc_group, "nearest_mrt")
+        mrt_dist = _first_valid(loc_group, "nearest_mrt_distance_m")
 
         g_new = group[group["purchase_type"] == "New Sale"]
         g_sub = group[group["purchase_type"] == "Sub Sale"]

@@ -179,7 +179,7 @@ function updateAdjNote() {
 // ============================================================
 
 async function loadData() {
-  const res = await fetch("data.json?v=8");
+  const res = await fetch("data.json?v=9");
   if (!res.ok) throw new Error("data.json not found. Run the pipeline first.");
   state.data = await res.json();
   // Pre-build MRT lookup: project_name → {mrt, dist}
@@ -326,6 +326,11 @@ function repopulateDropdowns(projects) {
   regionEl.innerHTML =
     `<option value="">All regions</option>` +
     regions.map(r => `<option value="${escapeHtml(r)}"${r === prevRegion ? " selected" : ""}>${escapeHtml(r)}</option>`).join("");
+
+  // MRT stations for the station search box.
+  const stations = [...new Set(projects.map(x => x.nearest_mrt).filter(Boolean))].sort();
+  const stationList = document.getElementById("mrt-station-list");
+  if (stationList) stationList.innerHTML = stations.map(n => `<option value="${escapeHtml(n)}">`).join("");
 }
 
 function populateFilters(projects) {
@@ -337,7 +342,7 @@ function populateFilters(projects) {
     "regionFilter", "minN",
     "minSize", "maxSize",
     "buildYearMin", "buildYearMax",
-    "mrtDistMax", "leaseLeftMin",
+    "mrtStation", "mrtDistMax", "leaseLeftMin",
     "houseAgeMax", "unitCountMin",
     "maxPsf", "lastTxAfter",
     "school-dist-min", "school-dist-max",
@@ -347,6 +352,9 @@ function populateFilters(projects) {
       renderProjects();
     });
   });
+
+  // MRT trend lease mode — re-render the trend chart only
+  document.getElementById("mrt-trend-lease")?.addEventListener("change", () => renderMrtTrend());
 
   // Global purchase type radios (explorer) — re-render table only
   document.querySelectorAll('input[name="purchaseType"]').forEach(radio => {
@@ -553,6 +561,7 @@ function readFilters() {
     bestSizeOnly:   !!(document.getElementById("bestSizeOnly")?.checked),
     buildYearMin:   nb("buildYearMin"),
     buildYearMax:   nb("buildYearMax"),
+    mrtStation:     v("mrtStation").toUpperCase(),
     mrtDistMax:     nb("mrtDistMax"),
     leaseLeftMin:   nb("leaseLeftMin"),
     houseAgeMax:    nb("houseAgeMax"),
@@ -630,6 +639,7 @@ function applyFilters(projects, f) {
     if (f.maxSize    != null && p.purchase_area_sqft > f.maxSize)                 return false;
     if (f.buildYearMin != null && (p.build_year == null || p.build_year < f.buildYearMin)) return false;
     if (f.buildYearMax != null && (p.build_year == null || p.build_year > f.buildYearMax)) return false;
+    if (f.mrtStation && !(p.nearest_mrt ?? "").toUpperCase().includes(f.mrtStation)) return false;
     if (f.mrtDistMax   != null && (p.nearest_mrt_distance_m == null || p.nearest_mrt_distance_m > f.mrtDistMax)) return false;
     if (f.leaseLeftMin != null && p.tenure_type !== "freehold" &&
         (p.lease_remaining == null || p.lease_remaining < f.leaseLeftMin))        return false;
@@ -728,6 +738,122 @@ function renderProjects() {
 
   updateSortIndicators();
   renderPagination(total);
+
+  state.mrtTrendRows = f.mrtStation ? filtered : null;
+  renderMrtTrend();
+}
+
+// ============================================================
+// MRT area price trend
+// ============================================================
+
+// Weighted median of [value, weight] points.
+function weightedMedian(points) {
+  const sorted = [...points].sort((a, b) => a[0] - b[0]);
+  const half = sorted.reduce((s, x) => s + x[1], 0) / 2;
+  let acc = 0;
+  for (const [v, w] of sorted) {
+    acc += w;
+    if (acc >= half) return v;
+  }
+  return null;
+}
+
+/**
+ * Plot the quarterly median PSF across all filtered rows near the selected MRT station.
+ * Rows come from the explorer filters (type, MRT radius, size, and so on).
+ * Each row's monthly PSF (ts_size.json) is lease-adjusted for the month's year,
+ * then pooled per quarter as a transaction-weighted median.
+ */
+function renderMrtTrend() {
+  const panel = document.getElementById("mrt-trend");
+  if (!panel) return;
+  const rows = state.mrtTrendRows;
+  if (!rows) {
+    panel.hidden = true;
+    if (state.charts["mrt-trend-chart"]) { state.charts["mrt-trend-chart"].destroy(); delete state.charts["mrt-trend-chart"]; }
+    return;
+  }
+  panel.hidden = false;
+
+  const stations = [...new Set(rows.map(r => r.nearest_mrt).filter(Boolean))];
+  document.getElementById("mrt-trend-name").textContent =
+    stations.length === 1 ? stations[0] : `"${document.getElementById("mrtStation").value.trim()}" (${stations.length} stations)`;
+  const note = document.getElementById("mrt-trend-note");
+
+  if (!state.tsSize) {
+    note.textContent = "Loading time series.";
+    ensureTsSize().then(() => renderMrtTrend());
+    return;
+  }
+
+  const mode = document.getElementById("mrt-trend-lease")?.value || "bala";
+  const byQ = new Map();  // qKey -> { adj: [[psf, n]], raw: [[psf, n]], n, blocks:Set }
+  for (const r of rows) {
+    const series = state.tsSize[`${r.project_name}|${Math.round(r.purchase_area_sqft)}`]?.p;
+    if (!series) continue;
+    for (const [month, psf, n] of series) {
+      const qk = monthToQKey(month);
+      let q = byQ.get(qk);
+      if (!q) byQ.set(qk, q = { adj: [], raw: [], n: 0, blocks: new Set() });
+      q.raw.push([psf, n]);
+      q.adj.push([psf * leaseFactor(r, parseInt(month.slice(0, 4)), mode), n]);
+      q.n += n;
+      q.blocks.add(r.project_name);
+    }
+  }
+
+  const qks = [...byQ.keys()].sort();
+  const blocks = new Set(rows.map(r => r.project_name));
+  const tx = qks.reduce((s, k) => s + byQ.get(k).n, 0);
+  note.textContent = qks.length
+    ? `${fmtNum(blocks.size)} projects/blocks, ${fmtNum(tx)} transactions. Uses the explorer filters (Type, MRT ≤, size, and so on). ` +
+      `Quarterly median PSF, weighted by transaction count.` +
+      (mode === "none" ? "" : ` Lease adjustment uses the remaining lease in each transaction year.`)
+    : "No transactions match these filters.";
+
+  const q = qks.map(k => byQ.get(k));
+  makeChart("mrt-trend-chart", {
+    type: "line",
+    data: {
+      labels: qks.map(qKeyToLabel),
+      datasets: [
+        {
+          label: mode === "none" ? "Median PSF" : "Lease-adjusted PSF",
+          data: q.map(x => Math.round(weightedMedian(x.adj))),
+          borderColor: "#2563eb", backgroundColor: "#2563eb",
+          borderWidth: 2, pointRadius: 0, tension: .25,
+        },
+        ...(mode === "none" ? [] : [{
+          label: "Raw PSF",
+          data: q.map(x => Math.round(weightedMedian(x.raw))),
+          borderColor: "#9ca3af", backgroundColor: "#9ca3af",
+          borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0, tension: .25,
+        }]),
+      ],
+    },
+    options: {
+      ...baseOptions(),
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: true, labels: { boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: c => `${c.dataset.label}: $${fmtNum(c.parsed.y)}`,
+            afterBody: items => {
+              const x = q[items[0].dataIndex];
+              return `${fmtNum(x.n)} tx · ${fmtNum(x.blocks.size)} projects/blocks`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: "#667085", maxTicksLimit: 12 } },
+        y: { grid: { color: "#edf0f3" }, ticks: { color: "#667085", callback: v => `$${fmtNum(v)}` },
+             title: { display: true, text: "PSF ($)" } },
+      },
+    },
+  });
 }
 
 // ============================================================
@@ -795,7 +921,7 @@ function goPage(p) {
 function ensureTimeSeries() {
   if (state.ts) return Promise.resolve(state.ts);
   if (state.tsLoading) return state.tsLoading;
-  state.tsLoading = fetch("ts.json?v=8")
+  state.tsLoading = fetch("ts.json?v=9")
     .then(r => { if (!r.ok) throw new Error("ts.json not found"); return r.json(); })
     .then(data => { state.ts = data; state.tsLoading = null; return data; })
     .catch(err => {
@@ -810,7 +936,7 @@ function ensureTimeSeries() {
 function ensureTsSize() {
   if (state.tsSize) return Promise.resolve(state.tsSize);
   if (state.tsSizeLoading) return state.tsSizeLoading;
-  state.tsSizeLoading = fetch("ts_size.json?v=9")
+  state.tsSizeLoading = fetch("ts_size.json?v=10")
     .then(r => { if (!r.ok) throw new Error("ts_size.json not found"); return r.json(); })
     .then(data => { state.tsSize = data; state.tsSizeLoading = null; return data; })
     .catch(err => {
@@ -825,7 +951,7 @@ function ensureTsSize() {
 function ensureSchools() {
   if (state.schools) return Promise.resolve(state.schools);
   if (state.schoolsLoading) return state.schoolsLoading;
-  state.schoolsLoading = fetch("schools.json?v=8")
+  state.schoolsLoading = fetch("schools.json?v=9")
     .then(r => { if (!r.ok) throw new Error("schools.json not found"); return r.json(); })
     .then(data => { state.schools = data; state.schoolsLoading = null; return data; })
     .catch(err => {
